@@ -216,7 +216,7 @@ func (b *Work) runWorker(n int) {
 		Proxy:              http.ProxyURL(b.ProxyAddr),
 	}
 	if b.H2 {
-		//http2.ConfigureTransport(tr)
+		http2.ConfigureTransport(tr)
 	} else {
 		tr.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	}
