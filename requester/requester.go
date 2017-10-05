@@ -36,10 +36,20 @@ type result struct {
 	err           error
 	statusCode    int
 	duration      time.Duration
+	connStart     time.Time
+	connEnd       time.Time
 	connDuration  time.Duration // connection setup(DNS lookup + Dial up) duration
+	dnsStart      time.Time
+	dnsEnd        time.Time
 	dnsDuration   time.Duration // dns lookup duration
+	reqStart      time.Time
+	reqEnd        time.Time
 	reqDuration   time.Duration // request "write" duration
+	resStart      time.Time
+	resEnd        time.Time
 	resDuration   time.Duration // response "read" duration
+	delayStart    time.Time
+	delayEnd      time.Time
 	delayDuration time.Duration // delay between response and request
 	contentLength int64
 }
@@ -127,7 +137,7 @@ func (b *Work) makeRequest(c *http.Client) {
 	s := time.Now()
 	var size int64
 	var code int
-	var dnsStart, connStart, resStart, reqStart, delayStart time.Time
+	var dnsStart, dnsEnd, connStart, connEnd, resStart, resEnd, reqStart, reqEnd, delayStart, delayEnd time.Time
 	var dnsDuration, connDuration, resDuration, reqDuration, delayDuration time.Duration
 	req := cloneRequest(b.Request, b.RequestBody)
 	trace := &httptrace.ClientTrace{
@@ -135,21 +145,25 @@ func (b *Work) makeRequest(c *http.Client) {
 			dnsStart = time.Now()
 		},
 		DNSDone: func(dnsInfo httptrace.DNSDoneInfo) {
-			dnsDuration = time.Now().Sub(dnsStart)
+			dnsEnd = time.Now()
+			dnsDuration = dnsEnd.Sub(dnsStart)
 		},
 		GetConn: func(h string) {
 			connStart = time.Now()
 		},
 		GotConn: func(connInfo httptrace.GotConnInfo) {
-			connDuration = time.Now().Sub(connStart)
+			connEnd = time.Now()
+			connDuration = connEnd.Sub(connStart)
 			reqStart = time.Now()
 		},
 		WroteRequest: func(w httptrace.WroteRequestInfo) {
-			reqDuration = time.Now().Sub(reqStart)
+			reqEnd = time.Now()
+			reqDuration = reqEnd.Sub(reqStart)
 			delayStart = time.Now()
 		},
 		GotFirstResponseByte: func() {
-			delayDuration = time.Now().Sub(delayStart)
+			delayEnd = time.Now()
+			delayDuration = delayEnd.Sub(delayStart)
 			resStart = time.Now()
 		},
 	}
@@ -161,18 +175,28 @@ func (b *Work) makeRequest(c *http.Client) {
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}
-	t := time.Now()
-	resDuration = t.Sub(resStart)
-	finish := t.Sub(s)
+	resEnd = time.Now()
+	resDuration = resEnd.Sub(resStart)
+	finish := resEnd.Sub(s)
 	b.results <- &result{
 		statusCode:    code,
 		duration:      finish,
 		err:           err,
 		contentLength: size,
+		connStart:     connStart,
+		connEnd:       connEnd,
 		connDuration:  connDuration,
+		dnsStart:      dnsStart,
+		dnsEnd:        dnsEnd,
 		dnsDuration:   dnsDuration,
+		reqStart:      reqStart,
+		reqEnd:        reqEnd,
 		reqDuration:   reqDuration,
+		resStart:      resStart,
+		resEnd:        resEnd,
 		resDuration:   resDuration,
+		delayStart:    delayStart,
+		delayEnd:      delayEnd,
 		delayDuration: delayDuration,
 	}
 }
@@ -192,7 +216,7 @@ func (b *Work) runWorker(n int) {
 		Proxy:              http.ProxyURL(b.ProxyAddr),
 	}
 	if b.H2 {
-		http2.ConfigureTransport(tr)
+		//http2.ConfigureTransport(tr)
 	} else {
 		tr.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	}

@@ -33,16 +33,26 @@ type report struct {
 	average  float64
 	rps      float64
 
-	avgConn   float64
-	avgDNS    float64
-	avgReq    float64
-	avgRes    float64
-	avgDelay  float64
-	connLats  []float64
-	dnsLats   []float64
-	reqLats   []float64
-	resLats   []float64
-	delayLats []float64
+	avgConn       float64
+	avgDNS        float64
+	avgReq        float64
+	avgRes        float64
+	avgDelay      float64
+	connSLats     []int64
+	connELats     []int64
+	connLats      []float64
+	dnsSLats      []int64
+	dnsELats      []int64
+	dnsLats       []float64
+	reqSLats      []int64
+	reqELats      []int64
+	reqLats       []float64
+	resSLats      []int64
+	resELats      []int64
+	resLats       []float64
+	delaySLats    []int64
+	delayELats    []int64
+	delayLats     []float64
 
 	results chan *result
 	total   time.Duration
@@ -80,10 +90,20 @@ func (r *report) finalize() {
 			r.avgDNS += res.dnsDuration.Seconds()
 			r.avgReq += res.reqDuration.Seconds()
 			r.avgRes += res.resDuration.Seconds()
+			r.connSLats = append(r.connSLats, res.connEnd.UnixNano())
+			r.connELats = append(r.connELats, res.connEnd.UnixNano())
 			r.connLats = append(r.connLats, res.connDuration.Seconds())
+			r.dnsSLats = append(r.dnsSLats, res.dnsStart.UnixNano())
+			r.dnsELats = append(r.dnsELats, res.dnsEnd.UnixNano())
 			r.dnsLats = append(r.dnsLats, res.dnsDuration.Seconds())
+			r.reqSLats = append(r.reqSLats, res.reqStart.UnixNano())
+			r.reqELats = append(r.reqELats, res.reqEnd.UnixNano())
 			r.reqLats = append(r.reqLats, res.reqDuration.Seconds())
+			r.delaySLats = append(r.delaySLats, res.delayStart.UnixNano())
+			r.delayELats = append(r.delayELats, res.delayEnd.UnixNano())
 			r.delayLats = append(r.delayLats, res.delayDuration.Seconds())
+			r.resSLats = append(r.resSLats, res.resStart.UnixNano())
+			r.resELats = append(r.resELats, res.resStart.UnixNano())
 			r.resLats = append(r.resLats, res.resDuration.Seconds())
 			r.statusCodeDist[res.statusCode]++
 			if res.contentLength > 0 {
@@ -102,10 +122,10 @@ func (r *report) finalize() {
 }
 
 func (r *report) printCSV() {
-	r.printf("response-time,DNS+dialup,DNS,Request-write,Response-delay,Response-read\n")
+	r.printf("response-time,DNS+dialup,DNS+dialup-start,DNS+dialup-end,DNS,DNS-start,DNS-end,Request-write,Request-write-start,Request-write-end,Response-delay,Response-delay-start,Response-delay-end,Response-read,Response-read-start,Response-read-end\n")
 	for i, val := range r.lats {
-		r.printf("%4.4f,%4.4f,%4.4f,%4.4f,%4.4f,%4.4f\n",
-			val, r.connLats[i], r.dnsLats[i], r.reqLats[i], r.delayLats[i], r.resLats[i])
+		r.printf("%4.4f,%4.4f,%d,%d,%4.4f,%d,%d,%4.4f,%d,%d,%4.4f,%d,%d,%4.4f,%d,%d\n",
+			val, r.connLats[i], r.connSLats[i], r.connELats[i], r.dnsLats[i], r.dnsSLats[i], r.dnsELats[i], r.reqLats[i], r.reqSLats[i], r.reqELats[i], r.delayLats[i], r.delaySLats[i], r.delayELats[i], r.resLats[i], r.resSLats[i], r.resELats[i])
 	}
 }
 
