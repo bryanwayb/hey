@@ -27,7 +27,7 @@ import (
 	"runtime"
 	"strings"
 
-	"./requester"
+	"github.com/bryanwayb/hey/requester"
 )
 
 const (
