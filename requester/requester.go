@@ -135,7 +135,7 @@ func (b *Work) Finish() {
 	newReport(b.writer(), b.N, b.results, b.Output, total).finalize()
 }
 
-func (b *Work) makeRequest(c *http.Client) {
+func (b *Work) makeRequest(c *http.Client, sem *semaphore.Weighted) {
 	s := time.Now()
 	var size int64
 	var code int
@@ -170,7 +170,22 @@ func (b *Work) makeRequest(c *http.Client) {
 		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+
+	sem.Acquire(context.Background(), 1)
+
+	var throttle <-chan time.Time
+	if b.QPS > 0 {
+		throttle = time.Tick(time.Duration(1e6/(b.QPS)) * time.Microsecond)
+	}
+
 	resp, err := c.Do(req)
+
+	if b.QPS > 0 {
+		<-throttle
+	}
+
+	sem.Release(1)
+
 	if err == nil {
 		size = resp.ContentLength
 		code = resp.StatusCode
@@ -203,7 +218,7 @@ func (b *Work) makeRequest(c *http.Client) {
 	}
 }
 
-func (b *Work) runWorker() {
+func (b *Work) runWorker(sem *semaphore.Weighted) {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -224,7 +239,7 @@ func (b *Work) runWorker() {
 			return http.ErrUseLastResponse
 		}
 	}
-	b.makeRequest(client)
+	b.makeRequest(client, sem)
 }
 
 func (b *Work) runWorkers() {
@@ -233,26 +248,16 @@ func (b *Work) runWorkers() {
 
 	sem := semaphore.NewWeighted(int64(b.C))
 
+	sem.TryAcquire(250)
+
 	for i := 0; i < b.N; i++ {
 		go func() {
-			sem.Acquire(context.Background(), 1)
-
-			var throttle <-chan time.Time
-			if b.QPS > 0 {
-				throttle = time.Tick(time.Duration(1e6/(b.QPS)) * time.Microsecond)
-			}
-
-			b.runWorker()
-
-			if b.QPS > 0 {
-				<-throttle
-			}
-
+			b.runWorker(sem)
 			wg.Done()
-			sem.Release(1)
 		}()
 	}
 
+	sem.Release(250)
 	wg.Wait()
 }
 
