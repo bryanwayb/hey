@@ -246,10 +246,7 @@ func (b *Work) runWorkers() {
 	var wg sync.WaitGroup
 	wg.Add(b.N)
 
-	var c64 = int64(b.C)
-	sem := semaphore.NewWeighted(c64)
-
-	sem.TryAcquire(c64)
+	sem := semaphore.NewWeighted(int64(b.C))
 
 	for i := 0; i < b.N; i++ {
 		go func() {
@@ -257,8 +254,7 @@ func (b *Work) runWorkers() {
 			wg.Done()
 		}()
 	}
-
-	sem.Release(c64)
+	
 	wg.Wait()
 }
 
