@@ -136,7 +136,6 @@ func (b *Work) Finish() {
 }
 
 func (b *Work) makeRequest(c *http.Client, sem *semaphore.Weighted) {
-	s := time.Now()
 	var size int64
 	var code int
 	var dnsStart, dnsEnd, connStart, connEnd, resStart, resEnd, reqStart, reqEnd, delayStart, delayEnd time.Time
@@ -178,13 +177,9 @@ func (b *Work) makeRequest(c *http.Client, sem *semaphore.Weighted) {
 		throttle = time.Tick(time.Duration(1e6/(b.QPS)) * time.Microsecond)
 	}
 
+	s := time.Now()
+
 	resp, err := c.Do(req)
-
-	if b.QPS > 0 {
-		<-throttle
-	}
-
-	sem.Release(1)
 
 	if err == nil {
 		size = resp.ContentLength
@@ -195,6 +190,13 @@ func (b *Work) makeRequest(c *http.Client, sem *semaphore.Weighted) {
 	resEnd = time.Now()
 	resDuration = resEnd.Sub(resStart)
 	finish := resEnd.Sub(s)
+
+	if b.QPS > 0 {
+		<-throttle
+	}
+
+	sem.Release(1)
+
 	b.results <- &result{
 		statusCode:    code,
 		duration:      finish,
@@ -254,7 +256,7 @@ func (b *Work) runWorkers() {
 			wg.Done()
 		}()
 	}
-	
+
 	wg.Wait()
 }
 
