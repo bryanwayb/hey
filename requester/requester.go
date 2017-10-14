@@ -17,6 +17,7 @@ package requester
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"io"
 	"io/ioutil"
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	"golang.org/x/net/http2"
+	"golang.org/x/sync/semaphore"
 )
 
 const heyUA = "hey/0.0.1"
@@ -154,17 +156,17 @@ func (b *Work) makeRequest(c *http.Client) {
 		GotConn: func(connInfo httptrace.GotConnInfo) {
 			connEnd = time.Now()
 			connDuration = connEnd.Sub(connStart)
-			reqStart = time.Now()
+			reqStart = connEnd
 		},
 		WroteRequest: func(w httptrace.WroteRequestInfo) {
 			reqEnd = time.Now()
 			reqDuration = reqEnd.Sub(reqStart)
-			delayStart = time.Now()
+			delayStart = reqEnd
 		},
 		GotFirstResponseByte: func() {
 			delayEnd = time.Now()
 			delayDuration = delayEnd.Sub(delayStart)
-			resStart = time.Now()
+			resStart = delayEnd
 		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
@@ -201,12 +203,7 @@ func (b *Work) makeRequest(c *http.Client) {
 	}
 }
 
-func (b *Work) runWorker(n int) {
-	var throttle <-chan time.Time
-	if b.QPS > 0 {
-		throttle = time.Tick(time.Duration(1e6/(b.QPS)) * time.Microsecond)
-	}
-
+func (b *Work) runWorker() {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true,
@@ -227,25 +224,35 @@ func (b *Work) runWorker(n int) {
 			return http.ErrUseLastResponse
 		}
 	}
-	for i := 0; i < n; i++ {
-		if b.QPS > 0 {
-			<-throttle
-		}
-		b.makeRequest(client)
-	}
+	b.makeRequest(client)
 }
 
 func (b *Work) runWorkers() {
 	var wg sync.WaitGroup
-	wg.Add(b.C)
+	wg.Add(b.N)
 
-	// Ignore the case where b.N % b.C != 0.
-	for i := 0; i < b.C; i++ {
+	sem := semaphore.NewWeighted(int64(b.C))
+
+	for i := 0; i < b.N; i++ {
 		go func() {
-			b.runWorker(b.N / b.C)
+			sem.Acquire(context.Background(), 1)
+
+			var throttle <-chan time.Time
+			if b.QPS > 0 {
+				throttle = time.Tick(time.Duration(1e6/(b.QPS)) * time.Microsecond)
+			}
+
+			b.runWorker()
+
+			if b.QPS > 0 {
+				<-throttle
+			}
+
 			wg.Done()
+			sem.Release(1)
 		}()
 	}
+
 	wg.Wait()
 }
 
